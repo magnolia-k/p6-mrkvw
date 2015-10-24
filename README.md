@@ -4,10 +4,10 @@
 
 # SYNOPSIS
 
- $ mrkvw --port=7000 [markdown file]
- http server is ready: http://127.0.0.1:7000/ (pid:xxxxxx)
+    $ mrkvw --port=7000 [markdown file]
+    http server is ready: http://127.0.0.1:7000/ (pid:xxxxxx)
 
- -> open browser and access to http://127.0.0.1:7000 
+    -> open browser and access to http://127.0.0.1:7000 
 
 # INSTALL
 
