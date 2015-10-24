@@ -1,0 +1,132 @@
+#!/usr/bin/env perl6
+
+use v6;
+
+use HTTP::Server::Tiny;
+use WebSocket::P6SGI;
+use Text::Markdown;
+
+sub MAIN(Str $watch-path, Int :$port=7000) {
+    if ! ( $watch-path.IO ~~ :e ) {
+        open($watch-path, :w).close; # create file if not exists
+    }
+
+    my Str $path;
+    if ( ! $*SPEC.is-absolute( $watch-path ) ) {
+        $path = $*SPEC.rel2abs( $watch-path );
+    } else {
+        $path = $watch-path;
+    }
+
+    our %connection;
+
+    watch( $path, %connection );
+
+    my $html = $=finish;
+    $html ~~ s:g/'<<<PORT>>>'/$port/;
+
+    my $server = HTTP::Server::Tiny.new(port => $port);
+
+    $server.run(-> %env {
+        given %env<PATH_INFO> {
+            when '/' {
+                200, [], [$html];
+            }
+
+            when '/websocket' {
+                my $s;
+
+                ws-psgi(%env,
+                    on-ready => -> $ws {
+                        unless ( %connection<$path>:exists ) {
+                            %connection<$path> = $ws;
+                            my $md = parse-markdown( slurp( $path ) );
+                            $ws.send-text($md.to_html);
+                        }
+                    },
+
+                    on-close => -> $ws {
+                        $s.close if $s;
+                    },
+                );
+            }
+
+            default {
+                404, [], ['not found'];
+            }
+
+        }
+    });
+}
+
+sub watch($path, %connection) {
+    my $supply-watch = IO::Notification.watch-path( $path );
+    
+    $supply-watch.act( -> $change {
+        if ( %connection<$path>:exists ) {
+            my $md = parse-markdown( slurp( $path ) );
+            %connection<$path>.send-text( $md.to_html );
+
+            watch( $path, %connection );
+        }
+    });
+}
+
+=finish
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Markdown Viewer</title>
+        <style type="text/css">
+            code { color: #FFFFFF; background-color: #000000 }
+        </style>
+    </head>
+    <script type=text/javascript>
+        var uri = 'ws://localhost:<<<PORT>>>/websocket';
+        var webSocket = null;
+
+        function init() {
+            open();
+        }
+
+        function open() {
+            if (webSocket == null) {
+                webSocket = new WebSocket(uri);
+
+                webSocket.onopen = onOpen;
+                webSocket.onmessage = onMessage;
+                webSocket.onclose = onClose;
+                webSocket.onerror = onError;
+            }
+        }
+
+        function onOpen(event) {
+        }
+
+        function onMessage(event) {
+            var content = document.getElementById('content');
+            while (content.firstChild) content.removeChild(content.firstChild);
+
+            content.innerHTML = event.data;
+        }
+
+        function onError(event) {
+        }
+
+        function onClose(event) {
+            var content = document.getElementById('content');
+            while (content.firstChild) content.removeChild(content.firstChild);
+
+            content.innerText = "プレビュー終了";
+        }
+
+        window.onload = function(event) {
+            init();
+        }
+
+    </script>
+    <body>
+        <div id="content"><p id="text"></p></div>
+    </body>
+</html>
